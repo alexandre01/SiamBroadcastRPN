@@ -1,0 +1,4 @@
+TRAIN:
+  BATCH_SIZE: 24
+  LAMBDA: 2.0
+  TH_HIGH: 0.55
