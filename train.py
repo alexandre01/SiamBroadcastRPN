@@ -4,7 +4,7 @@ import trainers
 from configs import cfg
 
 
-parser = argparse.ArgumentParser(description="Siamese RPN Training")
+parser = argparse.ArgumentParser(description="Reference Guided RPN Training")
 parser.add_argument(
     "--config-file",
     default="",

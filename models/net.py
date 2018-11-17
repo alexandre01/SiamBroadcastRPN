@@ -40,10 +40,10 @@ class BaseNet(nn.Module):
         x = self.relu(x)  # 1/2, 64
         x = self.maxpool(x)  # 1/4, 64
         x = self.res2(x)  # 1/4, 64
-        x = self.res3(x)  # 1/8, 128
-        x = self.res4(x)  # 1/16, 256
+        r3 = self.res3(x)  # 1/8, 128
+        x = self.res4(r3)  # 1/16, 256
 
-        return x
+        return x, r3
 
 
 class GC(nn.Module):
@@ -65,6 +65,30 @@ class GC(nn.Module):
         return x
 
 
+class Refine(nn.Module):
+    def __init__(self, inplanes, planes, outplanes, scale_factor=2):
+        super(Refine, self).__init__()
+        self.convFS1 = nn.Conv2d(inplanes, outplanes, kernel_size=3, padding=1)
+        self.convFS2 = nn.Conv2d(outplanes, planes, kernel_size=3, padding=1)
+        self.convFS3 = nn.Conv2d(planes, outplanes, kernel_size=3, padding=1)
+        self.convMM1 = nn.Conv2d(outplanes, planes, kernel_size=3, padding=1)
+        self.convMM2 = nn.Conv2d(planes, outplanes, kernel_size=3, padding=1)
+        self.scale_factor = scale_factor
+
+    def forward(self, f, pm):
+        s = self.convFS1(f)
+        sr = self.convFS2(F.relu(s))
+        sr = self.convFS3(F.relu(sr))
+        s = s + sr
+
+        m = s + F.interpolate(pm, scale_factor=self.scale_factor, mode='bilinear')
+
+        mr = self.convMM1(F.relu(m))
+        mr = self.convMM2(F.relu(mr))
+        m = m + mr
+        return m
+
+
 class Net(nn.Module):
     def __init__(self):
         super().__init__()
@@ -75,7 +99,11 @@ class Net(nn.Module):
         self.convG1 = nn.Conv2d(512, 256, kernel_size=3, padding=1)
         self.convG2 = nn.Conv2d(256, 512, kernel_size=3, padding=1)
 
+        self.RF = Refine(512, 256, 512)
+
         self.extras = nn.ModuleList([
+            nn.Conv2d(512, 256, kernel_size=1),
+            nn.Conv2d(256, 512, kernel_size=3, stride=2, padding=1),
             nn.Conv2d(512, 256, kernel_size=1),
             nn.Conv2d(256, 512, kernel_size=3, stride=2, padding=1),
             nn.Conv2d(512, 128, kernel_size=1),
@@ -87,6 +115,7 @@ class Net(nn.Module):
         ])
 
         self.loc = nn.ModuleList([
+            nn.Conv2d(512, 16, kernel_size=3, padding=1),
             nn.Conv2d(512, 24, kernel_size=3, padding=1),
             nn.Conv2d(512, 24, kernel_size=3, padding=1),
             nn.Conv2d(256, 24, kernel_size=3, padding=1),
@@ -95,6 +124,7 @@ class Net(nn.Module):
         ])
 
         self.conf = nn.ModuleList([
+            nn.Conv2d(512, 8, kernel_size=3, padding=1),
             nn.Conv2d(512, 12, kernel_size=3, padding=1),
             nn.Conv2d(512, 12, kernel_size=3, padding=1),
             nn.Conv2d(256, 12, kernel_size=3, padding=1),
@@ -107,8 +137,8 @@ class Net(nn.Module):
         loc = list()
         conf = list()
 
-        z = self.base(z, z_mask)
-        x = self.base(x, x_mask)
+        z, _ = self.base(z, z_mask)
+        x, r3 = self.base(x, x_mask)
 
         x = torch.cat((x, z), dim=1)
 
@@ -116,6 +146,8 @@ class Net(nn.Module):
         r = self.convG1(F.relu(x))
         r = self.convG2(F.relu(r))
         x = x + r
+
+        x = self.RF(r3, x)
 
         sources.append(x)
 
@@ -133,16 +165,17 @@ class Net(nn.Module):
         loc = torch.cat([o.view(o.size(0), -1) for o in loc], 1)
         conf = torch.cat([o.view(o.size(0), -1) for o in conf], 1)
 
-        return loc.view(loc.size(0), -1, 4), conf.view(conf.size(0), -1, 2)
+        return (loc.view(loc.size(0), -1, 4),
+                conf.view(conf.size(0), -1, 2))
 
     def temple(self, z, z_mask):
-        self.z_embedding = self.base(z.unsqueeze(0), z_mask.unsqueeze(0))
+        self.z_embedding, _ = self.base(z.unsqueeze(0), z_mask.unsqueeze(0))
 
     def infer(self, x, x_mask):
         sources = list()
         loc = list()
         conf = list()
-        x = self.base(x.unsqueeze(0), x_mask.unsqueeze(0))
+        x, r3 = self.base(x.unsqueeze(0), x_mask.unsqueeze(0))
 
         x = torch.cat((x, self.z_embedding), dim=1)
 
@@ -150,6 +183,8 @@ class Net(nn.Module):
         r = self.convG1(F.relu(x))
         r = self.convG2(F.relu(r))
         x = x + r
+
+        x = self.RF(r3, x)
 
         sources.append(x)
 

@@ -1,5 +1,5 @@
 DEBUG: False
 TRAIN:
-  BATCH_SIZE: 16
+  BATCH_SIZE: 2
   LAMBDA: 2.0
   TH_HIGH: 0.6

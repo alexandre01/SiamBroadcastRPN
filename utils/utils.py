@@ -36,7 +36,7 @@ def generate_anchors(cfg):
     return output
 
 
-def mask_img(img, bbox):
+def mask_img(img, bbox, use_mask=True):
     """
     Adds a mask of the input image according to the provided bounding box.
     img: (Tensor) image to be masked
@@ -46,6 +46,10 @@ def mask_img(img, bbox):
     """
 
     img_size = img.shape[-2:]
+
+    if use_mask is False:
+        return img.new_ones(img_size).unsqueeze(0)
+
     mask = img.new_zeros(img_size)
 
     img_size = img.new_tensor(img_size).float().repeat(2)
@@ -56,12 +60,16 @@ def mask_img(img, bbox):
     return mask.unsqueeze(0)
 
 
-def mask_imgs(imgs, bboxs):
+def mask_imgs(imgs, bboxs, use_mask=True):
     """
     Batch-version of mask_img
     """
 
     batch_size, _, w, h = imgs.shape
+
+    if use_mask is False:
+        return imgs.new_ones(batch_size, w, h).unsqueeze(1)
+
     masks = imgs.new_zeros(batch_size, w, h)
 
     img_size = imgs.new_tensor([w, h]).float().repeat(2)

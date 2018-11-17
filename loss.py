@@ -14,6 +14,13 @@ class MultiBoxLoss(nn.Module):
         self.point_form_anchors = point_form(anchors)
         self.cfg = cfg
 
+        if cfg.TRAIN.REGRESSION_LOSS == "smooth_l1":
+            self.regression_loss = F.smooth_l1_loss
+        elif cfg.TRAIN.REGRESSION_LOSS == "l1":
+            self.regression_loss = F.l1_loss
+        else:
+            raise Exception("Unknown regression loss.")
+
     def forward(self, pred, gt_boxes):
 
         loc_pred, conf_pred = pred
@@ -31,9 +38,11 @@ class MultiBoxLoss(nn.Module):
         pos = labels == 1  # Shape: [batch_size, num_anchors]
         neg = labels == 0  # Shape: [batch_size, num_anchors]
 
+        # TODO: take a maximum of 16 positive matches?
+
         N = pos.sum().item()
         if N == 0:
-            return loc_pred.new_tensor(0.), conf_pred.new_tensor(0.), 1., 1., 0., [0., 0.]
+            return loc_pred.new_tensor(0.), conf_pred.new_tensor(0.), 1., 1., 0., [0., 0.], 0
 
         """Regression loss."""
         # Repeat the anchors on the batch dimension [batch_size, num_anchors, 4], and select only the positive matches
@@ -43,7 +52,7 @@ class MultiBoxLoss(nn.Module):
         # Repeat the ground-truth boxes according to the number of positive matches
         gt_boxes_repeat = gt_boxes[i]  # Shape: [num_pos, 4]
         loc_gt = encode(gt_boxes_repeat, matched_anchors, self.cfg.MODEL.ANCHOR_VARIANCES)
-        loss_loc = F.smooth_l1_loss(loc_pred[pos], loc_gt, reduction="sum")
+        loss_loc = self.regression_loss(loc_pred[pos], loc_gt, reduction="sum")
 
         """Classification loss."""
         # Hard negative mining, compute intermediate loss. Shape: [batch_size, num_anchors]
@@ -60,7 +69,8 @@ class MultiBoxLoss(nn.Module):
         neg_idx = neg.unsqueeze(2).expand_as(conf_pred)
         conf_picked = conf_pred[(pos_idx + neg_idx).gt(0)].view(-1, 2)
         labels_picked = labels[(pos + neg).gt(0)]
-        loss_cls = F.cross_entropy(conf_picked, labels_picked, reduction="sum")
+        weight_balance = loc_pred.new_tensor([1/3, 1.])
+        loss_cls = F.cross_entropy(conf_picked, labels_picked, weight=weight_balance, reduction="sum")
 
         # Sum of losses: L(x,c,l,g) = (L_cls(x, c) + lambda * L_loc(x,l,g)) / N
         loss_loc /= N
@@ -75,4 +85,4 @@ class MultiBoxLoss(nn.Module):
         position_error = torch.norm((gt_boxes_repeat[:, :2] - decoded_loc_pred[:, :2]) * img_size, dim=1).mean()
         size_errors = (gt_boxes_repeat[:, 2:] - decoded_loc_pred[:, 2:]).abs().mean(dim=0) * img_size
 
-        return loss_loc, loss_cls, pos_accuracy, neg_accuracy, position_error, size_errors
+        return loss_loc, loss_cls, pos_accuracy, neg_accuracy, position_error, size_errors, N

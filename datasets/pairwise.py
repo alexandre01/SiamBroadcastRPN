@@ -13,6 +13,8 @@ class PairSampler(Dataset):
         super().__init__()
 
         self.datasets = datasets
+        if not isinstance(datasets, list):
+            self.datasets = [datasets, datasets]
 
         self.transform = transform
         if transform is not None and not isinstance(transform, list):
@@ -22,7 +24,7 @@ class PairSampler(Dataset):
         self.frame_range = frame_range
         self.causal = causal
 
-        self.dataset_indices, self.sequence_indices = self._merge_datasets(datasets, pairs_per_video)
+        self.dataset_indices, self.sequence_indices = self._merge_datasets(self.datasets, pairs_per_video)
 
     def __getitem__(self, index):
         if index >= len(self):
@@ -34,6 +36,7 @@ class PairSampler(Dataset):
         img_files, anno = self.datasets[dataset_id][sequence_id]
 
         rand_z, rand_x = self._sample_pair(len(img_files))
+
         img_z = cv2.imread(img_files[rand_z], cv2.IMREAD_COLOR)
         img_x = cv2.imread(img_files[rand_x], cv2.IMREAD_COLOR)
 

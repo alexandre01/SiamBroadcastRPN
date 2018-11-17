@@ -63,9 +63,17 @@ def to_percentage_coords(bbox, img_shape):
     img_shape: CV2 image shape
     """
 
-    height, width, _ = img_shape
-    scale = np.array([width, height, width, height])
-    return bbox / scale
+    if isinstance(img_shape, torch.Size):
+        _, height, width = img_shape
+    else:
+        height, width, _ = img_shape
+
+    if isinstance(bbox, torch.Tensor):
+        scale = bbox.new_tensor([width, height, width, height]).float()
+        return bbox / scale
+    else:
+        scale = np.array([width, height, width, height]).astype(float)
+        return bbox / scale
 
 
 def to_absolute_coords(bbox, img_shape):
@@ -74,12 +82,15 @@ def to_absolute_coords(bbox, img_shape):
     img_shape: Tensor image shape
     """
 
-    if isinstance(bbox, torch.Tensor):
+    if isinstance(img_shape, torch.Size):
         _, height, width = img_shape
+    else:
+        height, width, _ = img_shape
+
+    if isinstance(bbox, torch.Tensor):
         scale = bbox.new_tensor([width, height, width, height]).float()
         return bbox * scale
     else:
-        height, width, _ = img_shape
         scale = np.array([width, height, width, height]).astype(float)
         return bbox * scale
 
@@ -185,7 +196,6 @@ def match(threshold, truths, priors, variances, labels, loc_t, conf_t, idx):
     best_prior_overlap.squeeze_(1)
     best_truth_overlap.index_fill_(0, best_prior_idx, 2)  # ensure best prior
 
-    # TODO refactor: index  best_prior_idx with long tensor
     # ensure every gt matches with its prior of max overlap
     for j in range(best_prior_idx.size(0)):
         best_truth_idx[best_prior_idx[j]] = j
