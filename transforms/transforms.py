@@ -14,8 +14,8 @@ def base_transform(image, size):
 
 def jitter_transform(bbox):
     bbox = format_from_to(bbox.copy(), "x1y1x2y2", "x1y1wh")
-    bbox[:2] += 0.1 * bbox[2:] * np.random.randn(2)
-    bbox[2:] += bbox[2:] * np.random.uniform(-0.4, 0.3, 2)  # TODO: study the effect of the random distr.
+    bbox[:2] += 0.25 * bbox[2:] * np.random.randn(2)
+    bbox[2:] += 0.25 * bbox[2:] * np.random.randn(2)
 
     return format_from_to(bbox, "x1y1wh", "x1y1x2y2")
 
@@ -91,14 +91,24 @@ class ToPercentCoords(object):
 
 
 class Crop(object):
-    def __init__(self, mean=MEAN, context_amount=0.5, random_translate=False, random_resize=False, return_rect=False,
-                 center_at_pred=False):
+    def __init__(self, mean=MEAN, context_amount=0.5,
+                 random_translate=False, random_translate_range=0.3,
+                 random_resize=False, random_resize_scale_min=0.35, random_resize_scale_max=1.5,
+                 return_rect=False, center_at_pred=False, make_square=False):
         self.mean = mean
         self.context_amount = context_amount
+
         self.random_translate = random_translate
+        self.random_translate_range = random_translate_range
+
         self.random_resize = random_resize
+        self.random_resize_scale_min = random_resize_scale_min
+        self.random_resize_scale_max = random_resize_scale_max
+
         self.return_rect = return_rect
         self.center_at_pred = center_at_pred
+
+        self.make_square = make_square
 
     def __call__(self, image, bbox, prev_bbox=None):
 
@@ -112,16 +122,17 @@ class Crop(object):
         rect = format_from_to(rect, "x1y1x2y2", "cxcywh")
 
         # Add context to the cropping area
-        context = self.context_amount * rect[2:].sum()
-        rect[2:] = np.sqrt((rect[2:] + context).prod())
+        if not self.make_square:
+            context = self.context_amount * rect[2:].sum()
+            rect[2:] = np.sqrt((rect[2:] + context).prod())
+        else:
+            rect[2:] += 2 * self.context_amount * rect[2:]
 
         if self.random_resize:
-            scale_min, scale_max = 0.3, 1.5
-            rect[2:] *= np.random.uniform(scale_min, scale_max)
+            rect[2:] *= np.random.uniform(self.random_resize_scale_min, self.random_resize_scale_max)
 
         if self.random_translate:
-            translation_range = 0.3
-            displacement = np.random.uniform(-1, 1, 2) * translation_range * rect[2:]
+            displacement = np.random.uniform(-1, 1, 2) * self.random_translate_range * rect[2:]
             rect[:2] -= displacement
 
         # Convert back to x1y1x2y2 format
@@ -182,13 +193,16 @@ class PhotometricDistort(object):
         image = image.copy()
         image, bbox, prev_bbox = self.rand_brightness(image, bbox, prev_bbox)
 
+        """
+        # Do not distort hue and saturation
+        
         if np.random.randint(2):
             distort = Compose(self.pd[:-1])
         else:
             distort = Compose(self.pd[1:])
 
-        # image, bbox, prev_bbox = distort(image, bbox, prev_bbox)  # Do not distort hue and saturation
-        # return self.rand_light_noise(image, bbox, prev_bbox)
+        image, bbox, prev_bbox = distort(image, bbox, prev_bbox)
+        """
 
         return image, bbox, prev_bbox
 
@@ -305,9 +319,16 @@ class MotionBlur(object):
         """
         Add motion blur to every second image.
         """
-        kernel_size = 7
+        kernel_size = 9
         kernel_motion_blur = np.zeros((kernel_size, kernel_size))
-        kernel_motion_blur[int((kernel_size - 1) / 2), :] = np.ones(kernel_size)
+
+        if np.random.randint(2):
+            # Horizontal blur
+            kernel_motion_blur[int((kernel_size - 1) / 2), :] = np.ones(kernel_size)
+        else:
+            # Vertical blur
+            kernel_motion_blur[:, int((kernel_size - 1) / 2)] = np.ones(kernel_size)
+
         self.kernel_motion_blur = kernel_motion_blur / kernel_size
 
     def __call__(self, image, bbox, prev_bbox=None):
@@ -318,15 +339,20 @@ class MotionBlur(object):
 
 
 class Transform(object):
-    def __init__(self, context_amount=0.5, random_translate=False, random_resize=False, size=300, mean=MEAN,
-                 motion_blur=False):
+    def __init__(self, context_amount=0.5,
+                 random_translate=False, random_translate_range=0.3,
+                 random_resize=False, random_resize_scale_min=0.35, random_resize_scale_max=1.5,
+                 size=300, mean=MEAN,
+                 motion_blur=False, make_square=False):
 
         self.transform = Compose([
             ConvertFromInts(),
             ToAbsoluteCoords(),
             PhotometricDistort(),
             Crop(mean=mean, context_amount=context_amount,
-                 random_translate=random_translate, random_resize=random_resize),
+                 random_translate=random_translate, random_translate_range=random_translate_range,
+                 random_resize=random_resize, random_resize_scale_min=random_resize_scale_min,
+                 random_resize_scale_max=random_resize_scale_max, make_square=make_square),
             ToPercentCoords(),
             motion_blur and MotionBlur(),
             Resize(size),
@@ -334,19 +360,6 @@ class Transform(object):
 
     def __call__(self, image, bbox, prev_bbox=None):
         image, bbox, prev_bbox = self.transform(image, bbox, prev_bbox)
-
-        if prev_bbox is not None:
-            prev_bbox = jitter_transform(prev_bbox)
-
-        return image, bbox, prev_bbox
-
-
-class BaseTransform(object):
-    def __init__(self, size=300):
-        self.size = size
-
-    def __call__(self, image, bbox, prev_bbox=None):
-        image = base_transform(image, self.size)
 
         if prev_bbox is not None:
             prev_bbox = jitter_transform(prev_bbox)

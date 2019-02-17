@@ -52,19 +52,21 @@ class OTB(object):
         'otb2013': __otb13_seqs,
         'otb2015': __otb15_seqs,
         'tb50': __tb50_seqs,
-        'tb100': __tb100_seqs}
+        'tb100': __tb100_seqs
+    }
 
-    def __init__(self, root_dir, version=2015):
+    def __init__(self, root_dir, version=2015, sequences=None, bbox_format="x1y1wh"):
         super(OTB, self).__init__()
         assert version in self.__version_dict
 
         self.root_dir = root_dir
         self.version = version
         self._check_integrity(root_dir, version)
+        valid_seqs = sequences if sequences is not None else self.__version_dict[version]
 
-        valid_seqs = self.__version_dict[version]
         self.anno_files = list(chain.from_iterable(glob.glob(
             os.path.join(root_dir, s, 'groundtruth*.txt')) for s in valid_seqs))
+
         # remove empty annotation files
         # (e.g., groundtruth_rect.1.txt of Human4)
         self.anno_files = self._filter_files(self.anno_files)
@@ -73,6 +75,7 @@ class OTB(object):
         # rename repeated sequence names
         # (e.g., Jogging and Skating2)
         self.seq_names = self._rename_seqs(self.seq_names)
+        self.bbox_format = bbox_format
 
     def __getitem__(self, index):
         if isinstance(index, six.string_types):
@@ -102,6 +105,11 @@ class OTB(object):
             anno = np.loadtxt(io.StringIO(f.read().replace(',', ' ')))
         assert len(img_files) == len(anno)
         assert anno.shape[1] == 4
+
+        if self.bbox_format == "x1y1x2y2":
+            # Convert bounding boxes from x1y1wh to x1y1x2y2 format.
+            anno[:, 2] += anno[:, 0]
+            anno[:, 3] += anno[:, 1]
 
         return img_files, anno
 

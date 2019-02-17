@@ -9,20 +9,21 @@ def generate_anchors(cfg):
     mean = []
     for k, f in enumerate(cfg.MODEL.FEATURE_MAPS_DIM):
         for i, j in product(range(f), repeat=2):
-            f_k = cfg.MODEL.IMAGE_SIZE / cfg.MODEL.FEATURE_MAPS_STRIDES[k]
+            f_k = cfg.MODEL.X_SIZE / cfg.MODEL.FEATURE_MAPS_STRIDES[k]
             # unit center x,y
             cx = (j + 0.5) / f_k
             cy = (i + 0.5) / f_k
 
             # aspect_ratio: 1
             # rel size: min_size
-            s_k = cfg.MODEL.ANCHOR_MIN_SIZES[k] / cfg.MODEL.IMAGE_SIZE
+            s_k = cfg.MODEL.ANCHOR_MIN_SIZES[k] / cfg.MODEL.X_SIZE
             mean += [cx, cy, s_k, s_k]
 
             # aspect_ratio: 1
             # rel size: sqrt(s_k * s_(k+1))
-            s_k_prime = sqrt(s_k * (cfg.MODEL.ANCHOR_MAX_SIZES[k] / cfg.MODEL.IMAGE_SIZE))
-            mean += [cx, cy, s_k_prime, s_k_prime]
+            if cfg.MODEL.ANCHOR_MAX_SIZES[k] != cfg.MODEL.ANCHOR_MIN_SIZES[k]:
+                s_k_prime = sqrt(s_k * (cfg.MODEL.ANCHOR_MAX_SIZES[k] / cfg.MODEL.X_SIZE))
+                mean += [cx, cy, s_k_prime, s_k_prime]
 
             # rest of aspect ratios
             for ar in cfg.MODEL.ANCHOR_ASPECT_RATIOS[k]:
@@ -158,6 +159,26 @@ def IoUs(a, b):
     h = (torch.min(a[:, 3], b[:, 3]) - torch.max(a[:, 1], b[:, 1])).clamp(min=0)
     area = w * h
     return area / (sa + sb - area)
+
+
+def inside(p, bbox):
+    """
+    p: point (x, y)
+    bbox: in x1y1x2y2 format
+
+    Returns mask of indices for which the provided point is included in the bounding box
+    """
+    return (bbox[:, 0] <= p[0]) & (p[0] <= bbox[:, 2]) & (bbox[:, 1] <= p[1]) & (p[1] <= bbox[:, 3])
+
+
+def inside_margin(p, bbox):
+    """
+    p: point (x, y)
+    bbox: in cxcywh format
+
+    Returns mask of indices for which the provided point is included in the bounding box
+    """
+    return ((bbox[:, 0] - p[0]).abs() < 0.15 * bbox[:, 2]) & ((bbox[:, 1] - p[1]).abs() < 0.15 * bbox[:, 3])
 
 
 def compute_accuracy(ground_truth, prediction, cls):

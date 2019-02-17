@@ -38,11 +38,7 @@ class MultiBoxLoss(nn.Module):
         pos = labels == 1  # Shape: [batch_size, num_anchors]
         neg = labels == 0  # Shape: [batch_size, num_anchors]
 
-        # TODO: take a maximum of 16 positive matches?
-
         N = pos.sum().item()
-        if N == 0:
-            return loc_pred.new_tensor(0.), conf_pred.new_tensor(0.), 1., 1., 0., [0., 0.], 0
 
         """Regression loss."""
         # Repeat the anchors on the batch dimension [batch_size, num_anchors, 4], and select only the positive matches
@@ -52,7 +48,7 @@ class MultiBoxLoss(nn.Module):
         # Repeat the ground-truth boxes according to the number of positive matches
         gt_boxes_repeat = gt_boxes[i]  # Shape: [num_pos, 4]
         loc_gt = encode(gt_boxes_repeat, matched_anchors, self.cfg.MODEL.ANCHOR_VARIANCES)
-        loss_loc = self.regression_loss(loc_pred[pos], loc_gt, reduction="sum")
+        loss_loc = self.regression_loss(loc_pred[pos], loc_gt, reduction="mean")
 
         """Classification loss."""
         # Hard negative mining, compute intermediate loss. Shape: [batch_size, num_anchors]
@@ -61,7 +57,7 @@ class MultiBoxLoss(nn.Module):
         _, loss_idx = loss_cls.sort(1, descending=True)
         _, idx_rank = loss_idx.sort(1)
         num_pos = pos.sum(dim=1, keepdim=True)
-        num_neg = torch.clamp(self.cfg.TRAIN.NEGPOS_RATIO * num_pos, max=pos.size(1) - 1)
+        num_neg = torch.clamp(torch.clamp(self.cfg.TRAIN.NEGPOS_RATIO * num_pos, min=10), max=pos.size(1) - 1)
         neg = idx_rank < num_neg.expand_as(idx_rank)  # Update negatives by picking the ones w. highest confidence loss
 
         # Classification loss including Positive and Negative examples
@@ -70,17 +66,13 @@ class MultiBoxLoss(nn.Module):
         conf_picked = conf_pred[(pos_idx + neg_idx).gt(0)].view(-1, 2)
         labels_picked = labels[(pos + neg).gt(0)]
         weight_balance = loc_pred.new_tensor([1/3, 1.])
-        loss_cls = F.cross_entropy(conf_picked, labels_picked, weight=weight_balance, reduction="sum")
-
-        # Sum of losses: L(x,c,l,g) = (L_cls(x, c) + lambda * L_loc(x,l,g)) / N
-        loss_loc /= N
-        loss_cls /= N
+        loss_cls = F.cross_entropy(conf_picked, labels_picked, weight=weight_balance, reduction="mean")
 
         # Compute accuracy and pixel error metrics
         pos_accuracy = compute_accuracy(labels_picked, conf_picked, 1)
         neg_accuracy = compute_accuracy(labels_picked, conf_picked, 0)
 
-        img_size = self.cfg.MODEL.IMAGE_SIZE
+        img_size = self.cfg.MODEL.X_SIZE
         decoded_loc_pred = decode(loc_pred[pos], matched_anchors, self.cfg.MODEL.ANCHOR_VARIANCES)
         position_error = torch.norm((gt_boxes_repeat[:, :2] - decoded_loc_pred[:, :2]) * img_size, dim=1).mean()
         size_errors = (gt_boxes_repeat[:, 2:] - decoded_loc_pred[:, 2:]).abs().mean(dim=0) * img_size

@@ -16,7 +16,7 @@ class bbox_format:
     x1y1x2y2 = "x1y1x2y2"
 
 
-def format_from_to(_bbox, source_format, target_format):
+def format_from_to(_bbox, source_format, target_format, expand=False):
     """
     Helper function to transform bounding boxes from one format to another.
     """
@@ -28,33 +28,39 @@ def format_from_to(_bbox, source_format, target_format):
 
     if isinstance(_bbox, np.ndarray):
         bbox = _bbox.copy()
+        if len(bbox.shape) == 1:
+            bbox = np.expand_dims(bbox, axis=0)
+            expand = True
     elif isinstance(_bbox, torch.Tensor):
         bbox = _bbox.clone()
+        if len(bbox.shape) == 1:
+            bbox = torch.unsqueeze(bbox, dim=0)
+            expand = True
 
     if source_format == bbox_format.x1y1wh:
         if target_format == bbox_format.cxcywh:
-            bbox[:2] += bbox[2:] / 2
+            bbox[:, :2] += bbox[:, 2:] / 2
 
         elif target_format == bbox_format.x1y1x2y2:
-            bbox[2:] += bbox[:2]
+            bbox[:, 2:] += bbox[:, :2]
 
     elif source_format == bbox_format.cxcywh:
         if target_format == bbox_format.x1y1wh:
-            bbox[:2] -= bbox[2:] / 2
+            bbox[:, :2] -= bbox[:, 2:] / 2
 
         elif target_format == bbox_format.x1y1x2y2:
-            bbox = format_from_to(bbox, bbox_format.cxcywh, bbox_format.x1y1wh)
-            return format_from_to(bbox, bbox_format.x1y1wh, bbox_format.x1y1x2y2)
+            bbox = format_from_to(bbox, bbox_format.cxcywh, bbox_format.x1y1wh, expand=expand)
+            return format_from_to(bbox, bbox_format.x1y1wh, bbox_format.x1y1x2y2, expand=expand)
 
     elif source_format == bbox_format.x1y1x2y2:
         if target_format == bbox_format.x1y1wh:
-            bbox[2:] -= bbox[:2]
+            bbox[:, 2:] -= bbox[:, :2]
 
         elif target_format == bbox_format.cxcywh:
-            bbox = format_from_to(bbox, bbox_format.x1y1x2y2, bbox_format.x1y1wh)
-            return format_from_to(bbox, bbox_format.x1y1wh, bbox_format.cxcywh)
+            bbox = format_from_to(bbox, bbox_format.x1y1x2y2, bbox_format.x1y1wh, expand=expand)
+            return format_from_to(bbox, bbox_format.x1y1wh, bbox_format.cxcywh, expand=expand)
 
-    return bbox
+    return bbox[0] if expand else bbox
 
 
 def to_percentage_coords(bbox, img_shape):

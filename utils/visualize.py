@@ -46,7 +46,7 @@ def plot_sample(img, bbox, title=None, gt_box=None, anchor=None, prev_bbox=None,
     plt.axis("off")
 
 
-def plot_pair(exemplar, search, title=None, gt_box=None, prev_bbox=None, anchor=None, anchor_id=None):
+def plot_pair(exemplar, search, title=None, gt_box=None, prev_bbox=None, anchor=None, anchor_id=None, correlation=None):
     """Plots a pair of samples (exemplar/search)."""
 
     plt.tight_layout()
@@ -54,10 +54,17 @@ def plot_pair(exemplar, search, title=None, gt_box=None, prev_bbox=None, anchor=
     if title:
         plt.suptitle(title)
 
-    plt.subplot(1, 2, 1)
+    n = 3 if correlation is not None else 2
+
+    plt.subplot(1, n, 1)
     plot_sample(*exemplar, title="Exemplar")
-    plt.subplot(1, 2, 2)
+    plt.subplot(1, n, 2)
     plot_sample(*search, title="Search", gt_box=gt_box, prev_bbox=prev_bbox, anchor=anchor, anchor_id=anchor_id)
+
+    if correlation is not None:
+        plt.subplot(1, n, 3)
+        plt.imshow(correlation[0])
+        plt.gca().set_title("Correlation map")
 
 
 def plot_bboxes(anchors, format="x1y1wh", title=None, random_color=True):
@@ -77,7 +84,6 @@ def plot_bboxes(anchors, format="x1y1wh", title=None, random_color=True):
 
     if title:
         plt.gca().set_title(title)
-
 
 def plot_to_tensor():
     buf = io.BytesIO()

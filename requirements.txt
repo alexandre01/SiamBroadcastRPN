@@ -1,1 +1,3 @@
 yacs            # A simple experiment configuration system for research, based on YAML files.
+torch
+matplotlib

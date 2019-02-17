@@ -26,6 +26,6 @@ if args.config_file:
 cfg.merge_from_list(args.opts)
 cfg.freeze()
 
-net = models.Net()
+net = models.load_net(cfg.MODEL.NET, cfg)
 trainer = trainers.Trainer(net, cfg)
 trainer.train()

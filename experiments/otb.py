@@ -14,10 +14,10 @@ from metrics import rect_iou, center_error
 
 class ExperimentOTB(object):
 
-    def __init__(self, cfg, version=2015):
+    def __init__(self, cfg, version=2015, sequences=None):
         super(ExperimentOTB, self).__init__()
 
-        self.dataset = OTB(cfg.PATH.OTB, version)
+        self.dataset = OTB(cfg.PATH.OTB, version, sequences=sequences)
         self.result_dir = os.path.join(cfg.PATH.DATA_DIR, "results", 'OTB-' + str(version))
         self.report_dir = os.path.join(cfg.PATH.DATA_DIR, "reports", 'OTB-' + str(version))
         # as nbins_iou increases, the success score

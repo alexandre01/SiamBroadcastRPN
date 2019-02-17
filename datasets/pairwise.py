@@ -9,12 +9,14 @@ from utils.bbox_utils import to_percentage_coords
 
 class PairSampler(Dataset):
 
-    def __init__(self, datasets, transform=None, pairs_per_video=1, frame_range=100, causal=False):
+    def __init__(self, datasets, cfg, transform=None, pairs_per_video=1, frame_range=100, causal=False):
         super().__init__()
 
         self.datasets = datasets
         if not isinstance(datasets, list):
             self.datasets = [datasets, datasets]
+
+        self.cfg = cfg
 
         self.transform = transform
         if transform is not None and not isinstance(transform, list):
@@ -54,8 +56,8 @@ class PairSampler(Dataset):
             img_x, bbox_x, bbox_xprev = self.transform[1](img_x, bbox_x, bbox_xprev)
 
         # Convert to RBG image, and scale values to [0, 1].
-        img_z = cv2.cvtColor(img_z, cv2.COLOR_BGR2RGB) / 255.
-        img_x = cv2.cvtColor(img_x, cv2.COLOR_BGR2RGB) / 255.
+        img_z = self.cfg.MODEL.INPUT_RANGE * cv2.cvtColor(img_z, cv2.COLOR_BGR2RGB) / 255.
+        img_x = self.cfg.MODEL.INPUT_RANGE * cv2.cvtColor(img_x, cv2.COLOR_BGR2RGB) / 255.
 
         # Convert to PyTorch Tensors (in particular for images, (w, h, c) is transformed to (c, w, h)).
         img_z = torch.from_numpy(img_z).permute(2, 0, 1).float()
